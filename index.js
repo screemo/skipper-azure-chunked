@@ -6,6 +6,7 @@ var path = require('path');
 var AzureReceiver = require('./AzureReceiver');
 var azure = require('azure-storage');
 var utils = require('./utils');
+var Transform = require('stream').Transform;
 
 
 /**
@@ -105,8 +106,8 @@ module.exports = function AzureStore(options) {
 
         blobService.listBlocks(options.container, options.saveAs, 'uncommitted', function(error, list, response){
             if (error) {
-                console.log('Error listing blocks ' + blob + ' :: ' + error);
-                return callback(error);
+                console.log('Error listing blocks ' + options.saveAs + ' :: ' + error);
+                return callback(false);
 
             }
 

@@ -37,7 +37,7 @@ module.exports = function AzureReceiver(options, adapter) {
 
     options = options || {};
 
-    options.container = 'container';
+    options.container = options.container ||  'container';
 
     var log = options.log || function noOpLog(){};
 
@@ -72,7 +72,10 @@ module.exports = function AzureReceiver(options, adapter) {
             // Skipper core should gc() for us.
         });
 
-        var headers = options.headers || {};
+        var headers = __newFile.headers || {};
+
+        options.chunkNumber = options.chunkNumber || 1;
+        options.totalChunks = options.totalChunks || 1;
 
         // Lookup content type with mime if not set
         if ('undefined' === typeof headers['content-type']) {
@@ -82,13 +85,18 @@ module.exports = function AzureReceiver(options, adapter) {
         var container = options.container;
         var blob = __newFile.fd;
         var blockId = utils.getBlockId(options.chunkNumber, options.totalChunks);
-        var blockSize = options.chunkSize;
+        console.log(__newFile.byteCount);
+        var blockSize = options.chunkSize || __newFile.byteCount;
         var totalChunks = options.totalChunks;
+
+        var uploadOptions = {
+            contentType: headers['content-type']
+        };
 
         async.auto({
 
             createContainer: function (cb) {
-                blobService.createContainerIfNotExists(container, function (err, result, response) {
+                blobService.createContainerIfNotExists(container, {publicAccessLevel : 'blob'}, uploadOptions, function (err, result, response) {
                     if (err) {
                         console.log(('Receiver: Error creating container ' + container + ' :: Cancelling upload and cleaning up already-written bytes ... ' ).red);
                         cb(err);
@@ -98,26 +106,60 @@ module.exports = function AzureReceiver(options, adapter) {
                     return cb(null);
                 });
             },
-            uploadBlock: ['createContainer', function (cb, results) {
-                console.log(blob + ' ' + blockId);
-                d.run(function () {
-                    blobService.createBlockFromStream(blockId, container, blob, __newFile, blockSize,
-                        function (error, response) {
-                            if (error) {
-                                console.log(('Receiver: Error during blob upload  ' + blob + ' :: Cancelling upload and cleaning up already-written bytes ... ' ).red);
-                                cb(error);
-                                return;
-                            }
+            saveToDisk : function (cb) {
+                //TODO: Complete buffering to disk when blocksize is undefined.
 
-                            __newFile.extra = response;
-                            __newFile.size = new Number(__newFile.size);
+                return cb(null);
 
-                            var endedAt = new Date();
-                            var duration = ((endedAt - startedAt) / 1000);
-                            console.log('**** Azure upload took ' + duration + ' seconds...' + blockId);
-                            return cb(null);
 
-                        })
+                if (blockSize) {
+                    return cb(null);
+                }
+
+                var fileName = path.resolve(tempDirectory, blob + blockId);
+                var out__ = fsx.createWriteStream(fileName);
+
+                out__.on('error', function(err) {
+                   return cb(err);
+                });
+
+                out__.on('end', function() {
+                    fsx.stat(function(err, stat) {
+                       if (err) {
+                           return cb(err);
+                       }
+
+                        blockSize = util.inspect(stat.size);
+
+                        var __tmpStream = fsx.createReadStream(fileName);
+
+                        return callback(__tmpStream);
+
+                    });
+                });
+
+                __newFile.pipe(out__);
+
+            },
+            uploadBlock: ['createContainer', 'saveToDisk', function (cb, results) {
+                //console.log(blob + ' ' + blockId);
+
+                blobService.createBlockFromStream(blockId, container, blob, __newFile, blockSize, uploadOptions,
+                    function (error, response) {
+                        if (error) {
+                            console.log(('Receiver: Error during blob upload  ' + blob + ' :: Cancelling upload and cleaning up already-written bytes ... ' ).red);
+                            cb(error);
+                            return;
+                        }
+
+                        __newFile.extra = response;
+                        __newFile.size = new Number(__newFile.size);
+
+                        var endedAt = new Date();
+                        var duration = ((endedAt - startedAt) / 1000);
+                        //console.log('**** Azure upload took ' + duration + ' seconds...' + blockId);
+                        return cb(null);
+
                 });
             }],
             uncommittedBlocks: ['uploadBlock', function (cb, results) {
@@ -141,7 +183,7 @@ module.exports = function AzureReceiver(options, adapter) {
                     return cb(null);
                 }
 
-                console.log('Upload complete. About to commit blob!');
+                //console.log('Upload complete. About to commit blob!');
 
 
                 var blockList = [];
@@ -149,9 +191,9 @@ module.exports = function AzureReceiver(options, adapter) {
                 for (var i = 1; i <= totalChunks; i++) {
                     blockList.push(utils.getBlockId(i, totalChunks));
                 }
-                console.log(blockList);
-                blobService.commitBlocks(container, blob, {UncommittedBlocks: blockList}, function (err, list, response) {
-                    console.log('Upload complete');
+                //console.log(blockList);
+                blobService.commitBlocks(container, blob, {UncommittedBlocks: blockList}, uploadOptions, function (err, list, response) {
+                    //console.log('Upload complete');
                     return cb(err);
                 });
             }]
@@ -159,7 +201,7 @@ module.exports = function AzureReceiver(options, adapter) {
             if (err) {
                 return receiver__.emit('error', err);
             }
-
+            receiver__.emit( 'finish' );
             return done();
         });
     };
