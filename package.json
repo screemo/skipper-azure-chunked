@@ -1,6 +1,6 @@
 {
   "name": "skipper-azure-chunked",
-  "version": "1.0.2",
+  "version": "1.0.3",
   "description": "An adapter for skipper that allows azure chunked uploads",
   "main": "index.js",
   "author": "Nitzan Bar",

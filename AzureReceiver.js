@@ -96,7 +96,7 @@ module.exports = function AzureReceiver(options, adapter) {
         async.auto({
 
             createContainer: function (cb) {
-                blobService.createContainerIfNotExists(container, {publicAccessLevel : 'blob'}, uploadOptions, function (err, result, response) {
+                blobService.createContainerIfNotExists(container, {publicAccessLevel : 'blob'}, function (err, result, response) {
                     if (err) {
                         console.log(('Receiver: Error creating container ' + container + ' :: Cancelling upload and cleaning up already-written bytes ... ' ).red);
                         cb(err);
