@@ -85,9 +85,9 @@ module.exports = function AzureReceiver(options, adapter) {
         var container = options.container;
         var blob = __newFile.fd;
         var blockId = utils.getBlockId(options.chunkNumber, options.totalChunks);
-        console.log(__newFile.byteCount);
         var blockSize = options.chunkSize || __newFile.byteCount;
         var totalChunks = options.totalChunks;
+        var onFileComplete = options.onFileComplete || function(fd, callback) { return callback(null); };
 
         var uploadOptions = {
             contentType: headers['content-type']
@@ -180,7 +180,7 @@ module.exports = function AzureReceiver(options, adapter) {
             commitBlob: ['uncommittedBlocks', function (cb, results) {
 
                 if (!isUploadComplete(results.uncommittedBlocks, totalChunks)) {
-                    return cb(null);
+                    return cb(null, false);
                 }
 
                 //console.log('Upload complete. About to commit blob!');
@@ -194,13 +194,31 @@ module.exports = function AzureReceiver(options, adapter) {
                 //console.log(blockList);
                 blobService.commitBlocks(container, blob, {UncommittedBlocks: blockList}, uploadOptions, function (err, list, response) {
                     //console.log('Upload complete');
-                    return cb(err);
+                    if (err) {
+                        return cb(err, false);
+                    }
+
+
+                    return cb(null, true);
                 });
             }]
         }, function (err, results) {
             if (err) {
                 return receiver__.emit('error', err);
             }
+
+            //Upload complete. Notify app to perform POST upload processing
+            if (results.commitBlob) {
+                return onFileComplete(__newFile.fd, function(err) {
+                    if (err) {
+                        return receiver__.emit('error', err);
+                        return done(err);
+                    }
+
+                    receiver__.emit( 'finish' );
+                });
+            }
+
             receiver__.emit( 'finish' );
             return done();
         });
