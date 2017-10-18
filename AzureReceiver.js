@@ -82,6 +82,13 @@ module.exports = function AzureReceiver(options, adapter) {
             headers['content-type'] = mime.lookup(__newFile.fd);
         }
 
+        if (headers['content-disposition']) {   // Remove content-disposition header.
+                                                // It is not required for Azure Storage uploads
+                                                // And some non latin characters in filename cause issues here
+            delete headers['content-disposition'];
+        }
+
+
         var container = options.container;
         var blob = __newFile.fd;
         var blockId = utils.getBlockId(options.chunkNumber, options.totalChunks);
